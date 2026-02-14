@@ -1,5 +1,5 @@
 ---
-name: remote-browser
+name: shared-remote-browser
 description: >
   Launch a shared remote Chrome browser session with live screencast for humans to watch and interact with.
   Use when an agent needs browser automation AND human visibility — OAuth flows, CAPTCHAs, visual verification,
