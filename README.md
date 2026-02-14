@@ -77,10 +77,13 @@ bash scripts/start.sh --url "https://example.com"
 # Share that URL with a human — they'll see the live browser
 ```
 
-The session state is saved to `/tmp/remote-browser-19222.json` with the tunnel URL for easy reference.
+The session state is saved to `/tmp/remote-browser-19222.json` with the tunnel URL and OTP for easy reference.
+
+The viewer is protected by a 6-digit access code. Share the URL and the code with the human — they'll see a numpad-style entry screen before accessing the browser.
 
 ## Features
 
+🔒 **OTP Access Protection** — 6-digit code required to connect (generated per session)  
 ✨ **Live JPEG Screencast** — Real-time browser view streamed to the viewer  
 ⌨️ **iOS-style Virtual Keyboard** — Type naturally from any device  
 👆 **Tap-to-Click** — Touch-friendly interaction  

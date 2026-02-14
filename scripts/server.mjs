@@ -3,17 +3,16 @@
  * 
  * Serves a mobile-friendly browser viewer that connects to Chrome via CDP.
  * Provides: live screencast, virtual keyboard, click/scroll, pinch-to-zoom.
+ * Protected by a one-time access code (OTP) generated on startup.
  * 
  * Usage:
  *   node server.mjs [--cdp-port 19222] [--port 19224] [--quality 55]
- * 
- * Then tunnel the server port to share:
- *   cloudflared tunnel --url http://127.0.0.1:19224
  */
 
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -31,7 +30,37 @@ const PORT = parseInt(getArg('port', '19224'));
 const QUALITY = parseInt(getArg('quality', '55'));
 
 const VIEWER_HTML = fs.readFileSync(path.join(__dirname, 'viewer.html'), 'utf8');
+const AUTH_HTML = fs.readFileSync(path.join(__dirname, 'auth.html'), 'utf8');
 
+// --- OTP & Session Auth ---
+const OTP = String(Math.floor(100000 + Math.random() * 900000));
+const validSessions = new Set();
+
+function generateSessionToken() {
+  const token = crypto.randomBytes(24).toString('hex');
+  validSessions.add(token);
+  return token;
+}
+
+function parseCookies(header) {
+  const cookies = {};
+  if (header) header.split(';').forEach(c => {
+    const [k, ...v] = c.trim().split('=');
+    if (k) cookies[k] = v.join('=');
+  });
+  return cookies;
+}
+
+function isAuthenticated(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  return cookies['rb-auth'] && validSessions.has(cookies['rb-auth']);
+}
+
+function setAuthCookie(res, token) {
+  res.setHeader('Set-Cookie', `rb-auth=${token}; HttpOnly; SameSite=Strict; Path=/`);
+}
+
+// --- Key map ---
 const KEY_MAP = {
   'Backspace': { key: 'Backspace', code: 'Backspace', keyCode: 8 },
   'Enter':     { key: 'Enter', code: 'Enter', keyCode: 13 },
@@ -40,17 +69,55 @@ const KEY_MAP = {
 };
 
 const server = http.createServer((req, res) => {
-  if (req.url === '/viewer' || req.url === '/') {
+  // --- Auth routes (always accessible) ---
+  if (req.url === '/auth' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(VIEWER_HTML);
+    res.end(AUTH_HTML);
     return;
   }
+  if (req.url === '/auth' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { code } = JSON.parse(body);
+        if (code === OTP) {
+          const token = generateSessionToken();
+          setAuthCookie(res, token);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } else {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false }));
+        }
+      } catch {
+        res.writeHead(400); res.end('Bad request');
+      }
+    });
+    return;
+  }
+
+  // --- Health (no auth needed) ---
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, cdpPort: CDP_PORT, clients: wss.clients.size }));
     return;
   }
-  // Proxy to CDP (with host rewrite for non-localhost access)
+
+  // --- All other routes require auth ---
+  if (!isAuthenticated(req)) {
+    res.writeHead(302, { 'Location': '/auth' });
+    res.end();
+    return;
+  }
+
+  if (req.url === '/viewer' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(VIEWER_HTML);
+    return;
+  }
+
+  // Proxy to CDP
   const options = {
     hostname: '127.0.0.1', port: CDP_PORT, path: req.url, method: req.method,
     headers: { ...req.headers, host: `localhost:${CDP_PORT}` }
@@ -63,7 +130,23 @@ const server = http.createServer((req, res) => {
   proxy.on('error', () => { res.writeHead(502); res.end('CDP not reachable'); });
 });
 
-const wss = new WebSocketServer({ server, path: '/viewer-ws' });
+const wss = new WebSocketServer({ noServer: true });
+
+// Handle WebSocket upgrade with auth check
+server.on('upgrade', (req, socket, head) => {
+  if (req.url !== '/viewer-ws') {
+    socket.destroy();
+    return;
+  }
+  if (!isAuthenticated(req)) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
 
 wss.on('connection', (clientWs) => {
   console.log(`[${ts()}] Client connected (total: ${wss.clients.size})`);
@@ -159,6 +242,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[${ts()}] Remote Browser Viewer`);
   console.log(`  Local:  http://127.0.0.1:${PORT}/viewer`);
   console.log(`  CDP:    127.0.0.1:${CDP_PORT}`);
+  console.log(`  OTP:    ${OTP}`);
   console.log(`  Share:  cloudflared tunnel --url http://127.0.0.1:${PORT}`);
 });
 

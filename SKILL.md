@@ -37,11 +37,12 @@ The script outputs a shareable URL and writes a state file to `/tmp/remote-brows
   "cdpPort": 19222,
   "serverPort": 19224,
   "tunnelUrl": "https://xxx.trycloudflare.com",
-  "viewerUrl": "https://xxx.trycloudflare.com/viewer"
+  "viewerUrl": "https://xxx.trycloudflare.com/viewer",
+  "otp": "123456"
 }
 ```
 
-Share `viewerUrl` with the human. They get live screencast + virtual keyboard + tap-to-click.
+Share `viewerUrl` **and the OTP access code** with the human. They'll need to enter the 6-digit code before accessing the viewer. The OTP is printed to stdout and included in the state file.
 
 ## Automating Alongside
 

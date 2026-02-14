@@ -67,6 +67,12 @@ else
   echo "✓ Viewer ready"
 fi
 
+# Extract OTP from server log
+OTP=$(grep -oE 'OTP:    [0-9]{6}' "/tmp/remote-browser-${SERVER_PORT}.log" 2>/dev/null | head -1 | awk '{print $2}')
+if [ -n "$OTP" ]; then
+  echo "🔑 Access code: ${OTP}"
+fi
+
 # 4. Start Cloudflare tunnel
 echo "→ Starting tunnel..."
 
@@ -112,6 +118,7 @@ if [ -n "$TUNNEL_URL" ]; then
   "serverPort": ${SERVER_PORT},
   "tunnelUrl": "${TUNNEL_URL}",
   "viewerUrl": "${TUNNEL_URL}/viewer",
+  "otp": "${OTP}",
   "tunnelPid": ${TUNNEL_PID},
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

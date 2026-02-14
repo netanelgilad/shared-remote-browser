@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Remote Browser — Access Code</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex; justify-content: center; align-items: center; min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .container { width: 100%; max-width: 340px; padding: 24px; text-align: center; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #fff; }
+  .subtitle { font-size: 14px; color: #888; margin-bottom: 24px; }
+  .code-display {
+    display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; height: 56px;
+  }
+  .code-digit {
+    width: 44px; height: 52px; border-radius: 10px; background: #16213e;
+    border: 2px solid #0f3460; display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 700; color: #fff; transition: border-color 0.15s;
+  }
+  .code-digit.active { border-color: #e94560; }
+  .code-digit.filled { border-color: #53d769; }
+  .error { color: #e94560; font-size: 14px; min-height: 20px; margin-bottom: 16px; }
+  .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .numpad button {
+    height: 60px; border-radius: 12px; border: none; background: #16213e;
+    color: #fff; font-size: 24px; font-weight: 600; cursor: pointer;
+    transition: background 0.1s; -webkit-user-select: none; user-select: none;
+  }
+  .numpad button:active { background: #0f3460; }
+  .numpad button.del { font-size: 16px; color: #e94560; background: #1a1a2e; border: 1px solid #333; }
+  .numpad button.submit { background: #e94560; font-size: 16px; font-weight: 700; }
+  .numpad button.submit:disabled { opacity: 0.4; cursor: default; }
+  .numpad button.submit:not(:disabled):active { background: #c73650; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔒 Access Code</h1>
+  <p class="subtitle">Enter the 6-digit code to connect</p>
+  <div class="code-display" id="display"></div>
+  <div class="error" id="error"></div>
+  <div class="numpad">
+    <button onclick="press('1')">1</button><button onclick="press('2')">2</button><button onclick="press('3')">3</button>
+    <button onclick="press('4')">4</button><button onclick="press('5')">5</button><button onclick="press('6')">6</button>
+    <button onclick="press('7')">7</button><button onclick="press('8')">8</button><button onclick="press('9')">9</button>
+    <button class="del" onclick="del()">⌫ Delete</button><button onclick="press('0')">0</button>
+    <button class="submit" id="submitBtn" onclick="submit()" disabled>Go →</button>
+  </div>
+</div>
+<script>
+let code = '';
+const display = document.getElementById('display');
+const error = document.getElementById('error');
+const submitBtn = document.getElementById('submitBtn');
+
+function render() {
+  display.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const d = document.createElement('div');
+    d.className = 'code-digit' + (i === code.length ? ' active' : '') + (i < code.length ? ' filled' : '');
+    d.textContent = code[i] || '';
+    display.appendChild(d);
+  }
+  submitBtn.disabled = code.length !== 6;
+}
+
+function press(n) { if (code.length < 6) { code += n; error.textContent = ''; render(); } }
+function del() { code = code.slice(0, -1); error.textContent = ''; render(); }
+
+async function submit() {
+  if (code.length !== 6) return;
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch('/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    if (res.ok) { window.location.href = '/viewer'; }
+    else { error.textContent = 'Wrong code. Try again.'; code = ''; render(); }
+  } catch { error.textContent = 'Connection error.'; submitBtn.disabled = false; }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key >= '0' && e.key <= '9') press(e.key);
+  else if (e.key === 'Backspace') del();
+  else if (e.key === 'Enter') submit();
+});
+
+render();
+</script>
+</body>
+</html>
