@@ -11,8 +11,8 @@
   #url-bar{flex:1;padding:8px 10px;font-size:13px;border:1px solid #333;border-radius:6px;background:#16213e;color:#aaa;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .tb{padding:8px 12px;border:none;border-radius:6px;font-size:16px;color:#fff;cursor:pointer;touch-action:manipulation;background:#333}
 
-  #screen-wrap{flex:1;overflow:hidden;position:relative;min-height:0;touch-action:pan-x pan-y pinch-zoom}
-  #screen-inner{width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
+  #screen-wrap{flex:1;overflow:hidden;position:relative;min-height:0;touch-action:none}
+  #screen-inner{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
   #frame{max-width:100%;max-height:100%;object-fit:contain;display:block;-webkit-user-drag:none}
   .click-dot{position:absolute;width:20px;height:20px;background:rgba(46,204,113,0.6);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;animation:clickFade .5s ease-out forwards}
   @keyframes clickFade{to{opacity:0;transform:translate(-50%,-50%) scale(2)}}
@@ -95,39 +95,83 @@ frame.addEventListener('click', (e) => {
   document.body.classList.remove('click-mode');
 });
 
-// Pinch to zoom
-let scale = 1, lastDist = 0;
+// Zoom + Pan
+let scale = 1, tx = 0, ty = 0;
+let lastDist = 0, lastMidX = 0, lastMidY = 0;
+let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
+let scrollY0 = 0, isDragging = false;
 const inner = document.getElementById('screen-inner');
 const wrap = document.getElementById('screen-wrap');
+
+function applyTransform() {
+  // Clamp pan so you can't drag off-screen
+  if (scale <= 1) { tx = 0; ty = 0; }
+  else {
+    const rect = wrap.getBoundingClientRect();
+    const maxTx = (scale - 1) * rect.width / 2;
+    const maxTy = (scale - 1) * rect.height / 2;
+    tx = Math.max(-maxTx, Math.min(maxTx, tx));
+    ty = Math.max(-maxTy, Math.min(maxTy, ty));
+  }
+  inner.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+}
+
 wrap.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 2) lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  if (e.touches.length === 2) {
+    lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    lastMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  } else if (e.touches.length === 1) {
+    scrollY0 = e.touches[0].clientY;
+    panStartX = e.touches[0].clientX;
+    panStartY = e.touches[0].clientY;
+    panStartTx = tx;
+    panStartTy = ty;
+    isDragging = false;
+  }
 }, {passive: true});
+
 wrap.addEventListener('touchmove', (e) => {
   if (e.touches.length === 2) {
+    // Pinch zoom + two-finger pan
     const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    if (lastDist > 0) { scale = Math.max(1, Math.min(5, scale * (dist / lastDist))); inner.style.transform = 'scale(' + scale + ')'; }
-    lastDist = dist; e.preventDefault();
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (lastDist > 0) {
+      scale = Math.max(1, Math.min(5, scale * (dist / lastDist)));
+      tx += midX - lastMidX;
+      ty += midY - lastMidY;
+      applyTransform();
+    }
+    lastDist = dist;
+    lastMidX = midX;
+    lastMidY = midY;
+    e.preventDefault();
+  } else if (e.touches.length === 1 && scale > 1) {
+    // One-finger pan when zoomed
+    tx = panStartTx + (e.touches[0].clientX - panStartX);
+    ty = panStartTy + (e.touches[0].clientY - panStartY);
+    isDragging = true;
+    applyTransform();
+    e.preventDefault();
   }
 }, {passive: false});
-wrap.addEventListener('touchend', () => { lastDist = 0; });
-let lastTap = 0;
+
 wrap.addEventListener('touchend', (e) => {
+  lastDist = 0;
+  // Double-tap to reset zoom
   if (e.touches.length === 0 && !clickMode) {
     const now = Date.now();
-    if (now - lastTap < 300) { scale = 1; inner.style.transform = 'scale(1)'; }
+    if (now - lastTap < 300) { scale = 1; tx = 0; ty = 0; applyTransform(); }
     lastTap = now;
   }
-});
-
-// Scroll
-let scrollY0 = 0;
-wrap.addEventListener('touchstart', (e) => { if (e.touches.length === 1) scrollY0 = e.touches[0].clientY; }, {passive: true});
-wrap.addEventListener('touchend', (e) => {
-  if (e.changedTouches.length === 1 && !clickMode && scale <= 1) {
+  // Scroll (only when not zoomed and not dragging)
+  if (e.changedTouches.length === 1 && !clickMode && scale <= 1 && !isDragging) {
     const dy = e.changedTouches[0].clientY - scrollY0;
     if (Math.abs(dy) > 40) send({type:'scroll', deltaY: dy > 0 ? -3 : 3});
   }
-}, {passive: true});
+});
+let lastTap = 0;
 
 // Keyboard
 const LAYOUTS = {
