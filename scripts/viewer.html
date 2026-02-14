@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Remote Browser</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#111;color:#fff;font-family:system-ui;overflow:hidden;height:100dvh;display:flex;flex-direction:column}
+  
+  #toolbar{background:#1a1a2e;padding:6px 8px;display:flex;gap:6px;align-items:center;flex-shrink:0;border-bottom:1px solid #333}
+  #url-bar{flex:1;padding:8px 10px;font-size:13px;border:1px solid #333;border-radius:6px;background:#16213e;color:#aaa;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .tb{padding:8px 12px;border:none;border-radius:6px;font-size:16px;color:#fff;cursor:pointer;touch-action:manipulation;background:#333}
+
+  #screen-wrap{flex:1;overflow:hidden;position:relative;min-height:0;touch-action:pan-x pan-y pinch-zoom}
+  #screen-inner{width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
+  #frame{max-width:100%;max-height:100%;object-fit:contain;display:block;-webkit-user-drag:none}
+  .click-dot{position:absolute;width:20px;height:20px;background:rgba(46,204,113,0.6);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;animation:clickFade .5s ease-out forwards}
+  @keyframes clickFade{to{opacity:0;transform:translate(-50%,-50%) scale(2)}}
+
+  #keyboard{background:#2c2c2e;padding:6px 4px;flex-shrink:0}
+  .kb-row{display:flex;justify-content:center;gap:4px;margin-bottom:4px}
+  .key{padding:0;height:42px;border:none;border-radius:6px;font-size:16px;color:#fff;background:#4a4a4c;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex:1;max-width:38px;-webkit-tap-highlight-color:transparent;user-select:none}
+  .key:active{background:#636366}
+  .key.wide{max-width:56px;font-size:14px}
+  .key.wider{max-width:72px;font-size:12px}
+  .key.space{max-width:none;flex:4}
+  .key.action{background:#636366}
+  .key.enter-key{background:#0a84ff;max-width:72px;font-size:12px}
+  .key.shift-on{background:#fff;color:#000}
+  .key.bksp{max-width:52px;font-size:20px}
+
+  #status{position:fixed;top:4px;right:4px;font-size:10px;color:#666;z-index:10}
+  body.click-mode #frame{outline:2px solid #e74c3c}
+  body.click-mode #clickBtn{background:#e74c3c}
+</style>
+</head><body>
+<div id="status">connecting...</div>
+<div id="toolbar">
+  <button class="tb" id="backBtn">&larr;</button>
+  <button class="tb" id="fwdBtn">&rarr;</button>
+  <div id="url-bar">loading...</div>
+  <button class="tb" id="clickBtn" style="background:#922b21">TAP</button>
+</div>
+<div id="screen-wrap">
+  <div id="screen-inner">
+    <img id="frame" src="" draggable="false">
+  </div>
+</div>
+<div id="keyboard"></div>
+
+<script>
+const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(proto + '//' + location.host + '/viewer-ws');
+const frame = document.getElementById('frame');
+const status = document.getElementById('status');
+let clickMode = false, imgW = 0, imgH = 0;
+
+ws.onopen = () => { status.textContent = '\u25cf'; status.style.color = '#2ecc71'; };
+ws.onclose = (e) => { status.textContent = 'disconnected (' + e.code + ')'; status.style.color = '#e74c3c'; };
+ws.onmessage = (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'frame') {
+      frame.src = 'data:image/jpeg;base64,' + msg.data;
+      imgW = msg.width; imgH = msg.height;
+    } else if (msg.type === 'url') {
+      document.getElementById('url-bar').textContent = msg.url;
+    }
+  } catch(err) {}
+};
+function send(msg) { ws.readyState === 1 && ws.send(JSON.stringify(msg)); }
+
+// Toolbar
+document.getElementById('backBtn').onclick = () => send({type:'navigate', dir:'back'});
+document.getElementById('fwdBtn').onclick = () => send({type:'navigate', dir:'forward'});
+
+// Click mode
+document.getElementById('clickBtn').onclick = () => {
+  clickMode = !clickMode;
+  document.body.classList.toggle('click-mode', clickMode);
+};
+frame.addEventListener('click', (e) => {
+  if (!clickMode) return;
+  const rect = frame.getBoundingClientRect();
+  const rx = (e.clientX - rect.left) / rect.width;
+  const ry = (e.clientY - rect.top) / rect.height;
+  const dot = document.createElement('div');
+  dot.className = 'click-dot';
+  dot.style.left = (rx * 100) + '%';
+  dot.style.top = (ry * 100) + '%';
+  document.getElementById('screen-wrap').appendChild(dot);
+  setTimeout(() => dot.remove(), 500);
+  send({type:'click', x: Math.round(rx * imgW), y: Math.round(ry * imgH)});
+  clickMode = false;
+  document.body.classList.remove('click-mode');
+});
+
+// Pinch to zoom
+let scale = 1, lastDist = 0;
+const inner = document.getElementById('screen-inner');
+const wrap = document.getElementById('screen-wrap');
+wrap.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+}, {passive: true});
+wrap.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (lastDist > 0) { scale = Math.max(1, Math.min(5, scale * (dist / lastDist))); inner.style.transform = 'scale(' + scale + ')'; }
+    lastDist = dist; e.preventDefault();
+  }
+}, {passive: false});
+wrap.addEventListener('touchend', () => { lastDist = 0; });
+let lastTap = 0;
+wrap.addEventListener('touchend', (e) => {
+  if (e.touches.length === 0 && !clickMode) {
+    const now = Date.now();
+    if (now - lastTap < 300) { scale = 1; inner.style.transform = 'scale(1)'; }
+    lastTap = now;
+  }
+});
+
+// Scroll
+let scrollY0 = 0;
+wrap.addEventListener('touchstart', (e) => { if (e.touches.length === 1) scrollY0 = e.touches[0].clientY; }, {passive: true});
+wrap.addEventListener('touchend', (e) => {
+  if (e.changedTouches.length === 1 && !clickMode && scale <= 1) {
+    const dy = e.changedTouches[0].clientY - scrollY0;
+    if (Math.abs(dy) > 40) send({type:'scroll', deltaY: dy > 0 ? -3 : 3});
+  }
+}, {passive: true});
+
+// Keyboard
+const LAYOUTS = {
+  lower: [
+    'q w e r t y u i o p'.split(' '),
+    'a s d f g h j k l'.split(' '),
+    ['SHIFT','z','x','c','v','b','n','m','BKSP'],
+    ['123','@','SPACE','.','ENTER']
+  ],
+  upper: [
+    'Q W E R T Y U I O P'.split(' '),
+    'A S D F G H J K L'.split(' '),
+    ['SHIFT','Z','X','C','V','B','N','M','BKSP'],
+    ['123','@','SPACE','.','ENTER']
+  ],
+  sym: [
+    '1 2 3 4 5 6 7 8 9 0'.split(' '),
+    "- / : ; ( ) $ & @".split(' '),
+    ['#+=','.',',','?','!',"'",'"','BKSP'],
+    ['abc','@','SPACE','.','ENTER']
+  ],
+  sym2: [
+    '[ ] { } # % ^ * + ='.split(' '),
+    '_ \\ | ~ < > € £ ¥'.split(' '),
+    ['123','.',',','?','!',"'",'"','BKSP'],
+    ['abc','@','SPACE','.','ENTER']
+  ]
+};
+let layout = 'lower';
+function renderKeyboard() {
+  const kb = document.getElementById('keyboard');
+  kb.innerHTML = '';
+  LAYOUTS[layout].forEach(row => {
+    const div = document.createElement('div');
+    div.className = 'kb-row';
+    row.forEach(k => {
+      const btn = document.createElement('button');
+      btn.className = 'key';
+      if (k === 'SPACE') { btn.className += ' space'; btn.innerHTML = '&nbsp;'; }
+      else if (k === 'SHIFT') { btn.className += ' wide' + (layout === 'upper' ? ' shift-on' : ''); btn.innerHTML = '&#x21E7;'; }
+      else if (k === 'BKSP') { btn.className += ' bksp'; btn.innerHTML = '&#x232B;'; }
+      else if (k === 'ENTER') { btn.className += ' enter-key'; btn.textContent = 'return'; }
+      else if (k === '123' || k === 'abc' || k === '#+=') { btn.className += ' wider action'; btn.textContent = k; }
+      else { btn.textContent = k; }
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (k === 'SHIFT') { layout = layout === 'upper' ? 'lower' : 'upper'; renderKeyboard(); }
+        else if (k === '123') { layout = 'sym'; renderKeyboard(); }
+        else if (k === '#+=') { layout = 'sym2'; renderKeyboard(); }
+        else if (k === 'abc') { layout = 'lower'; renderKeyboard(); }
+        else if (k === 'BKSP') { send({type:'key', key:'Backspace'}); }
+        else if (k === 'ENTER') { send({type:'key', key:'Enter'}); }
+        else if (k === 'SPACE') { send({type:'type', text:' '}); }
+        else { send({type:'type', text: k}); if (layout === 'upper') { layout = 'lower'; renderKeyboard(); } }
+      });
+      div.appendChild(btn);
+    });
+    kb.appendChild(div);
+  });
+}
+renderKeyboard();
+</script>
+</body></html>
