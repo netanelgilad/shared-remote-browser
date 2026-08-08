@@ -65,7 +65,7 @@ bash ~/clawd/skills/shared-remote-browser/scripts/start.sh --url "https://exampl
 
 ```bash
 # Clone the repo
-git clone https://github.com/offloadmywork/shared-remote-browser.git
+git clone https://github.com/netanelgilad/shared-remote-browser.git
 cd shared-remote-browser
 
 # Start a session
