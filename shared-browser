@@ -1,0 +1,2 @@
+#!/bin/bash
+exec ~/.deno/bin/deno run --allow-all "$(dirname "$0")/cli.ts" "$@"

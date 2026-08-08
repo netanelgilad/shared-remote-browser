@@ -81,6 +81,24 @@ The session state is saved to `/tmp/remote-browser-19222.json` with the tunnel U
 
 The viewer is protected by a 6-digit access code. Share the URL and the code with the human — they'll see a numpad-style entry screen before accessing the browser.
 
+### Session Manager CLI
+
+The included CLI starts sessions in the background and tracks them locally. It requires [Deno](https://deno.com/).
+
+```bash
+# Start a fresh browser session
+./shared-browser launch --url "https://example.com" --name "oauth"
+
+# Share a Chrome instance that already exposes CDP
+./shared-browser expose 19222 --name "existing-browser"
+
+# List or stop sessions
+./shared-browser ps
+./shared-browser kill <id-or-port>
+```
+
+Add `--json` to `launch`, `expose`, or `ps` when another agent needs structured session details. The CLI keeps its session registry in `/tmp/shared-browser-sessions.json`.
+
 ## Features
 
 🔒 **OTP Access Protection** — 6-digit code required to connect (generated per session)  
@@ -96,6 +114,7 @@ The viewer is protected by a 6-digit access code. Share the URL and the code wit
 ## Requirements
 
 - **Google Chrome** — Must be installed (macOS: `/Applications/Google Chrome.app/`)
+- **Deno** — Required for the optional `shared-browser` session-management CLI
 - **Node.js** — For running the viewer server
 - **`ws` npm package** — Auto-installed to `/tmp/node_modules` if missing
 - **`cloudflared` CLI** — For creating the public tunnel ([install here](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/))

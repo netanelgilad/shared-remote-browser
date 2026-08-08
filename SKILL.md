@@ -11,6 +11,23 @@ description: >
 
 Shared browser session: agent automates via CDP/Playwright, human watches and interacts via a mobile-friendly viewer URL.
 
+## Preferred CLI
+
+Use the session manager when it is available. It runs Chrome, the viewer, and the tunnel in the background, then prints the viewer URL and OTP:
+
+```bash
+./shared-browser launch --url "https://example.com" --name "oauth"
+./shared-browser ps
+```
+
+To share Chrome that is already running with CDP enabled:
+
+```bash
+./shared-browser expose 19222 --name "existing-browser"
+```
+
+Use `./shared-browser kill <id-or-port>` when the shared session is no longer needed.
+
 ## Quick Start
 
 ```bash
@@ -71,6 +88,7 @@ Chrome CDP rejects non-localhost `Host` headers, so `server.mjs` acts as a WebSo
 ## Requirements
 
 - **Google Chrome** (macOS path: `/Applications/Google Chrome.app/`)
+- **Deno** (for the `shared-browser` session-management CLI)
 - **`ws` npm package** — auto-installed to `/tmp/node_modules` if missing
 - **`cloudflared` CLI** — for the public tunnel
 

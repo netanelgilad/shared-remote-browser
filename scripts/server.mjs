@@ -239,11 +239,14 @@ wss.on('connection', (clientWs) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[${ts()}] Remote Browser Viewer`);
-  console.log(`  Local:  http://127.0.0.1:${PORT}/viewer`);
-  console.log(`  CDP:    127.0.0.1:${CDP_PORT}`);
-  console.log(`  OTP:    ${OTP}`);
-  console.log(`  Share:  cloudflared tunnel --url http://127.0.0.1:${PORT}`);
+  // Structured ready line for CLI consumption
+  console.log(JSON.stringify({ ready: true, port: PORT, cdpPort: CDP_PORT, otp: OTP }));
+  // Human-readable info on stderr
+  console.error(`[${ts()}] Remote Browser Viewer`);
+  console.error(`  Local:  http://127.0.0.1:${PORT}/viewer`);
+  console.error(`  CDP:    127.0.0.1:${CDP_PORT}`);
+  console.error(`  OTP:    ${OTP}`);
+  console.error(`  Share:  cloudflared tunnel --url http://127.0.0.1:${PORT}`);
 });
 
 function ts() { return new Date().toISOString().slice(11, 19); }
