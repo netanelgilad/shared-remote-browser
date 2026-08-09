@@ -1,2 +1,9 @@
 #!/bin/bash
-exec ~/.deno/bin/deno run --allow-all "$(dirname "$0")/cli.ts" "$@"
+set -e
+
+if ! command -v deno >/dev/null 2>&1; then
+  echo "shared-browser requires Deno in PATH" >&2
+  exit 1
+fi
+
+exec deno run --allow-all "$(dirname "$0")/cli.ts" "$@"

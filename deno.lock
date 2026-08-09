@@ -8,7 +8,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:ws@^8.19.0"
+        "npm:ws@^8.21.3"
       ]
     }
   }

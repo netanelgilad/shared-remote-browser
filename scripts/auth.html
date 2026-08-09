@@ -77,8 +77,9 @@ async function submit() {
   submitBtn.disabled = true;
   try {
     const res = await fetch('/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    const result = await res.json().catch(() => ({}));
     if (res.ok) { window.location.href = '/viewer'; }
-    else { error.textContent = 'Wrong code. Try again.'; code = ''; render(); }
+    else { error.textContent = result.error || 'Wrong code. Try again.'; code = ''; render(); }
   } catch { error.textContent = 'Connection error.'; submitBtn.disabled = false; }
 }
 

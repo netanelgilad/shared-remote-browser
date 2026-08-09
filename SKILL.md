@@ -1,99 +1,79 @@
 ---
 name: shared-remote-browser
 description: >
-  Launch a shared remote Chrome browser session with live screencast for humans to watch and interact with.
-  Use when an agent needs browser automation AND human visibility — OAuth flows, CAPTCHAs, visual verification,
-  or any task where a human should see/control the browser alongside the agent. Starts Chrome with CDP,
-  serves a mobile-friendly viewer (tap, type, scroll, zoom), and tunnels via Cloudflare for a shareable URL.
+  Launch a shared local Chrome session with a secure, mobile-friendly live viewer for human-in-the-loop work.
+  Use for OAuth, CAPTCHAs, credentials, visual verification, or any browser task where an agent must pause and let
+  a human watch or control the same browser from a phone. Provides CDP automation, popup/tab switching, native phone
+  keyboard and clipboard input, and an explicit Done handoff signal.
 ---
 
-# Remote Browser
+# Shared Remote Browser
 
-Shared browser session: agent automates via CDP/Playwright, human watches and interacts via a mobile-friendly viewer URL.
+Use this skill when browser automation needs human visibility or intervention. The agent and viewer share one local Chrome; raw CDP stays on loopback.
 
-## Preferred CLI
+## Start a session
 
-Use the session manager when it is available. It runs Chrome, the viewer, and the tunnel in the background, then prints the viewer URL and OTP:
+From the skill directory:
 
 ```bash
 ./shared-browser launch --url "https://example.com" --name "oauth"
-./shared-browser ps
 ```
 
-To share Chrome that is already running with CDP enabled:
+The command prints the viewer URL, ten-minute access code, local CDP port, and session ID. Share only the viewer URL and access code with the human.
+
+To expose Chrome that is already running with CDP enabled:
 
 ```bash
 ./shared-browser expose 19222 --name "existing-browser"
 ```
 
-Use `./shared-browser kill <id-or-port>` when the shared session is no longer needed.
+Never expose or tunnel the CDP port itself.
 
-## Quick Start
+## Coordinate the handoff
 
-```bash
-# Start session (launches Chrome + viewer server + Cloudflare tunnel)
-bash "$(dirname "$0")/scripts/start.sh" --url "https://example.com"
-
-# Check state file for the shareable URL
-cat /tmp/remote-browser-19222.json
-```
-
-## Starting a Session
+1. Navigate and prepare the page using the agent’s CDP client.
+2. Tell the human to open the viewer and enter the code.
+3. Pause all agent browser input while `handoff.status` is `human-controlling`.
+4. Poll the local viewer health endpoint until the human presses **Done**:
 
 ```bash
-# Basic
-scripts/start.sh
-
-# With options
-scripts/start.sh --url "https://example.com" --cdp-port 19222 --port 19224
+curl -s http://127.0.0.1:<serverPort>/health
 ```
 
-The script outputs a shareable URL and writes a state file to `/tmp/remote-browser-{cdpPort}.json`:
+Resume automation only when the response contains:
+
 ```json
-{
-  "cdpPort": 19222,
-  "serverPort": 19224,
-  "tunnelUrl": "https://xxx.trycloudflare.com",
-  "viewerUrl": "https://xxx.trycloudflare.com/viewer",
-  "otp": "123456"
-}
+{"handoff":{"status":"complete"}}
 ```
 
-Share `viewerUrl` **and the OTP access code** with the human. They'll need to enter the 6-digit code before accessing the viewer. The OTP is printed to stdout and included in the state file.
+Direct CDP clients are not forcibly blocked, so respecting this pause is required to avoid racing the human.
 
-## Automating Alongside
-
-Connect Playwright (or any CDP client) to the same Chrome instance:
+## Connect the agent
 
 ```javascript
-const browser = await chromium.connectOverCDP('http://127.0.0.1:19222');
+const browser = await chromium.connectOverCDP('http://127.0.0.1:<cdpPort>');
 ```
 
-The human sees everything the agent does in real-time.
+OAuth popups opened by the active page are automatically selected in the human viewer. The human can also switch among all open page targets.
 
-## Checking Session Status
+## Inspect and stop sessions
 
 ```bash
-# Health check
-curl -s http://127.0.0.1:19224/health
-
-# State file
-cat /tmp/remote-browser-19222.json
+./shared-browser ps
+./shared-browser ps --json
+./shared-browser kill <id-or-port-or-name>
 ```
 
-## Architecture
+Always stop a session after the handoff task. `kill` removes a profile only when this tool created it; an externally exposed Chrome is left running.
 
-Chrome CDP rejects non-localhost `Host` headers, so `server.mjs` acts as a WebSocket proxy — it connects to CDP locally and bridges screencast frames + input events to/from the viewer client over the tunneled connection.
+## Operational notes
+
+- Access codes expire after ten minutes; authenticated viewer cookies remain valid for the running session.
+- Cloudflare quick-tunnel URLs are temporary. Restart the session if the tunnel dies.
+- The viewer handles page content, tabs/popups, and JavaScript dialogs. Native browser/macOS UI such as file pickers, passkeys, permissions, and extension popups requires a full-desktop fallback.
+- Multiple agents are serialized during session launch through a private registry lock, and sessions use separate port pairs and ephemeral Chrome profiles.
 
 ## Requirements
 
-- **Google Chrome** (macOS path: `/Applications/Google Chrome.app/`)
-- **Deno** (for the `shared-browser` session-management CLI)
-- **`ws` npm package** — auto-installed to `/tmp/node_modules` if missing
-- **`cloudflared` CLI** — for the public tunnel
-
-## Notes
-
-- `~/.cloudflared/config.yml` must be temporarily moved for quick tunnels to work (start.sh handles this automatically and restores it)
-- The viewer runs in the foreground (Ctrl+C to stop the tunnel)
-- Multiple sessions can run on different port pairs
+- Google Chrome at `/Applications/Google Chrome.app/`
+- Deno, Node.js/npm, and `cloudflared` available in `PATH`
